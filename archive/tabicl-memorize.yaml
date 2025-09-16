@@ -1,0 +1,92 @@
+# Try to get tabicl model to memorize one example.
+# A fork of tabicl.yaml.
+
+model:
+  name: "tabicl"
+  params:
+    regression_weight: 1
+    classification_weight: 1
+    tabicl_params:
+      n_classes: 10 # data?
+      embed_dim: 128 # paper
+      col_n_inducing_points: 128 # paper
+      col_n_blocks: 3 # paper
+      col_n_heads: 4 # paper
+      col_ff_dim: 256 # code: 2 * embed_dim
+      row_n_blocks: 3 # paper
+      row_n_heads: 8 # paper
+      row_ff_dim: 256 # code: 2 * embed_dim
+      row_max_cols: 1000 # data?
+      row_rope_base: 100_000 # paper
+      row_n_cls_tokens: 4 # paper
+      icl_n_blocks: 12 # paper
+      icl_n_heads: 4 # paper
+      icl_ff_dim: 1024 # ff_factor * n_cls_tokens * embed_dim
+      clf_ff_dim: 1024 # ff_factor * n_cls_tokens * embed_dim
+      no_query_attn: True
+
+training:
+  num_steps: 1000000
+  checkpoint_every: 10000
+  lr: 0.000003 # Woj's run 0.0002
+  micro_batch_size: 128  # Follows Woj's run
+  clip_grad_norm: 1.0 # Follow Woj's run
+
+logging:
+  experiment_name: "TabICL Reproduction [clf only]:: Memorize Batch 512"
+  extra_metrics:
+    # TabPFNV2 Fixed (woj): https://fundamental.wandb.io/research/evaluating_our_models/runs/tgl89uip/overview
+    - name: "ImprovementProbability"
+      kwargs:
+        reference_run: "research/evaluating_our_models/tgl89uip"
+    # Marta CatBoost run: https://fundamental.wandb.io/research/evaluating_our_models/runs/6dsxsix9/overview
+    # Finished July 16
+    - name: "ImprovementProbability"
+      kwargs:
+        reference_run: "research/evaluating_our_models/6dsxsix9"
+  tags:
+    - "Hayder::tabicl-model"
+    - "Hayder::tabicl-model::memorize"
+ 
+
+preprocessing:
+  train_processors:
+    - name: "to_device"
+  eval_processors:
+    - name: "to_device"
+  test_processors:
+    - name: "v1_to_v0"
+      verbose: False
+    - name: "imputer"
+    - name: "standardscaler"
+      normalise_targets: False
+    - name: "tensorise"
+    - name: "to_device"
+
+data_reader:
+  name: "constant"
+  inner_kwargs:
+      name: "prototypev0"
+      file_names: ["tabicl-big/tabicl/batch*/*.h5"]
+      local: False     
+      batch_size: 512
+      num_context: 
+        _klass: "numpy.arange"
+        args: [100, 900, 1]
+      num_target: 
+        _klass: "numpy.arange"
+        args: [900, 100, -1]  # Ensure sequence length is always 1000
+      num_workers: 24 
+      num_samples_from_a_single_readout: 1  # No repeats
+      datafile_buffer_size: 0
+      pad_length: 100
+      fused_processors_kwargs:
+       - name: "label_permuter"
+       - name: "imputer"
+       - name: "standardscaler"
+         normalise_targets: False
+       - name: "tensorise"
+      use_multiprocessing: True
+      shuffle_datasets_in_file: True
+      shuffle_file_order: True
+

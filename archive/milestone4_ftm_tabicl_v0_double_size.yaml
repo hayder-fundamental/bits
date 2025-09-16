@@ -1,0 +1,124 @@
+# Training config for fundamental's TabICL implementation.
+#
+# Comments on parameters indicate their source / reason.
+
+model:
+  name: "ftm_tabicl_v0"
+  params:
+    regression_weight: 1
+    classification_weight: 1
+    tabicl_params:
+      n_classes: 10 # data?
+      embed_dim: 256 # 2 * paper
+      col_n_inducing_points: 256 # 2 * paper
+      col_n_blocks: 3 # paper
+      col_n_heads: 8 # 2 * paper
+      col_ff_dim: 512 # code: 2 * embed_dim
+      row_n_blocks: 3 # paper
+      row_n_heads: 16 # paper
+      row_ff_dim: 514 # code: 2 * embed_dim
+      row_max_cols: 1000 # data?
+      row_rope_base: 100_000 # paper
+      row_n_cls_tokens: 8 # 2 * paper
+      icl_n_blocks: 12 # paper
+      icl_n_heads: 8 # paper
+      icl_ff_dim: 2048 # ff_factor=2 * n_cls_tokens * embed_dim
+      output_ff_dim: 2048 # ff_factor=2 * n_cls_tokens * embed_dim
+      max_ctx: null
+      std_eps: 1.
+
+training:
+  num_steps: 1_000_000_000
+  checkpoint_every: 1000
+  lr: 0.0001 # Halved for stability
+  micro_batch_size: 64  # Follows Woj's run
+  clip_grad_norm: 1.0 # Follow Woj's run
+  use_amp: False
+  use_tf32: True
+
+logging:
+  experiment_name: "TabICL Reproduction [clf and reg] (double size)"
+  extra_metrics:
+    # TabPFNV2: https://fundamental.wandb.io/research/evaluating_our_models/runs/qfweaxv3/overview
+    - name: "ImprovementProbability"
+      kwargs:
+        reference_run: "research/evaluating_our_models/qfweaxv3"
+    # CatBoost
+    # https://fundamental.wandb.io/research/evaluating_our_models/runs/5te54env/overview
+    - name: "ImprovementProbability"
+      kwargs:
+        reference_run: "research/evaluating_our_models/5te54env"
+  params_watch: False # This is slow, enable as needed
+
+preprocessing:
+  train_processors:
+    - name: "to_device"
+  eval_processors:
+    - name: "to_device"
+  test_processors:
+    - name: "v1_to_v0"
+      verbose: False
+    - name: "imputer"
+    - name: "standardscaler"
+      normalise_targets: False
+    - name: "tensorise"
+    - name: "to_device"
+
+data_reader:
+  name: "mixture"
+  probabilities: [0.99, 0.01]
+  is_eval: [False, True]
+  rng_seed: 42
+  inner_kwargs:
+    - name: "prototypev0"
+      file_names: 
+        - "tabicl-big/tabicl/batch*/*.h5"
+        - "s3://fun-shared-research-eks/research/tabicl_datagen/regression/big/*.h5"
+        - "s3://fun-shared-research-eks/research/tabicl_datagen/regression/big2/*.h5"
+      local: False
+      batch_size: 512
+      num_context:
+        _klass: "numpy.arange"
+        args: [100, 900, 1]
+      num_target:
+        _klass: "numpy.arange"
+        args: [900, 100, -1]  # Ensure sequence length is always 1000
+      num_workers: 24
+      num_samples_from_a_single_readout: 1  # No repeats
+      datafile_buffer_size: 0
+      pad_length: 100
+      fused_processors_kwargs:
+       - name: "label_permuter"
+       - name: "imputer"
+       - name: "standardscaler"
+         normalise_targets: False
+       - name: "tensorise"
+      use_multiprocessing: True
+      shuffle_datasets_in_file: True
+      shuffle_file_order: True
+      fix_duplicates: True
+      rng_seed: 42
+      learnability_threshold: 0.9
+      learnability_subset_size: 512
+    - name: "prototypev1"
+      file_names:
+        - "tabpfn-eval-v1/DO_NOT_USE_FOR_TRAIN-tabpfnv2_test_set.h5"
+        - "tabpfn-eval-v1/DO_NOT_USE_FOR_TRAIN-openml_long_class.h5"
+      local: False
+      batch_size: [256, 64, 8, 8]
+      num_context: [128, 1024, 7500, 10000]
+      num_context_probs: [0.25, 0.25, 0.25, 0.25]
+      num_target: 100
+      num_workers: 1
+      num_samples_from_a_single_readout: 8
+      fused_processors_kwargs:
+       - name: "v1_to_v0"
+         verbose: False
+       - name: "imputer"
+       - name: "standardscaler"
+         normalise_targets: False
+       - name: "tensorise"
+      use_multiprocessing: True
+      shuffle_datasets_in_file: True
+      fix_duplicates: True
+      rng_seed: 42
