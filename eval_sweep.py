@@ -8,6 +8,8 @@ import subprocess
 import tqdm
 import wandb
 
+# TODO(HE): check the below statement: should it check for running evals 
+# of the train run id?
 # Note: this script does not account for being run twice with the same
 # run id simultaneously.
 
@@ -43,7 +45,6 @@ def cmd_args() -> argparse.Namespace:
             " If True, we don't skip evaluating checkpoints which already have an eval."
         ),
     )
-
     return parser.parse_args()
 
 
@@ -79,9 +80,7 @@ def get_steps_to_eval(
         api.runs(EVALS_RUN_PATH, filters=eval_run_filters, per_page=50),
         desc="Finding existing evals.",
     )
-    # TODO(HE): Make this check the timestamp of the run.
-    # - The logic should be to recompute the step only if it has a different
-    # timestamp. This also just collects the steps to skip.
+
     existing_evals = collections.defaultdict(list)
     for r in evals_to_skip_gen:
         existing_evals[checkpoint_step_from_eval_run(r)].append(r)
@@ -143,8 +142,7 @@ if __name__ == "__main__":
         ]
         logging.info("Evaluating step %s.", checkpoint_step)
         logging.info("Executing %s.", " ".join(command))
-        print(" ".join(command))
-        # subprocess.run(command, check=True)
+        subprocess.run(command, check=True)
 
         logging.info("Refreshing checkpoint steps to evaluate.")
         steps_to_eval, skipped = get_steps_to_eval(api, run, args.recompute_existing)
